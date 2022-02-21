@@ -60,6 +60,8 @@ def parse_option():
                         help='Number of workers for dataloader')
     parser.add_argument('--test_batch_size', type=int, default=1, metavar='test_batch_size',
                         help='Size of test batch)')
+    parser.add_argument('--n_trans', default=16, type=int,
+                        help='...')
 
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     
@@ -94,7 +96,7 @@ def main():
     train_loader, val_loader, meta_testloader, meta_valloader, n_cls, _ = get_dataloaders(opt)
 
     # load model
-    model = create_model(opt.model, n_cls, opt.dataset)
+    model = create_model(opt.model, n_cls, opt.dataset, n_trans=opt.n_trans)
     ckpt = torch.load(opt.model_path)["model"]
 
     from collections import OrderedDict

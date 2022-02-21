@@ -17,7 +17,7 @@ import torch.nn.functional as F
 
 from dataset.mini_imagenet import ImageNet, MetaImageNet
 from dataset.tiered_imagenet import TieredImageNet, MetaTieredImageNet
-from dataset.cifar import CIFAR100, MetaCIFAR100, CIFAR100_toy
+from dataset.cifar import CIFAR100, CIFAR100_6240, MetaCIFAR100, CIFAR100_toy
 from dataset.transform_cfg import transforms_options, transforms_test_options, transforms_list
 
    

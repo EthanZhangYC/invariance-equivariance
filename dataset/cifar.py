@@ -117,6 +117,113 @@ class CIFAR100(Dataset):
     def __len__(self):
         return len(self.labels)
 
+class CIFAR100_6240(Dataset):
+    """support FC100 and CIFAR-FS"""
+    def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
+                 transform=None):
+        super(Dataset, self).__init__()
+        self.data_root = args.data_root
+        self.partition = partition
+        self.data_aug = args.data_aug
+        self.mean = [0.5071, 0.4867, 0.4408]
+        self.std = [0.2675, 0.2565, 0.2761]
+        self.normalize = transforms.Normalize(mean=self.mean, std=self.std)
+        self.color_transform = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4)
+        self.pretrain = pretrain
+        self.simclr = args.simclr
+
+        if self.pretrain:
+            self.file_pattern = '%s.pickle'
+        else:
+            self.file_pattern = '%s.pickle'
+        self.data = {}
+
+        with open(os.path.join(self.data_root, self.file_pattern % partition), 'rb') as f:
+            data = pickle.load(f, encoding='latin1')
+            self.imgs = data['data']
+            labels = data['labels']
+            # adjust sparse labels to labels from 0 to n.
+            cur_class = 0
+            label2label = {}
+            for idx, label in enumerate(labels):
+                if label not in label2label:
+                    label2label[label] = cur_class
+                    cur_class += 1
+            new_labels = []
+            for idx, label in enumerate(labels):
+                new_labels.append(label2label[label])
+            self.labels = new_labels
+        
+
+        # pre-process for contrastive sampling
+        self.k = k
+        self.is_sample = is_sample
+        if self.is_sample:
+            self.labels = np.asarray(self.labels)
+            self.labels = self.labels - np.min(self.labels)
+            num_classes = np.max(self.labels) + 1
+
+            self.cls_positive = [[] for _ in range(num_classes)]
+            for i in range(len(self.imgs)):
+                self.cls_positive[self.labels[i]].append(i)
+
+            self.cls_negative = [[] for _ in range(num_classes)]
+            for i in range(num_classes):
+                for j in range(num_classes):
+                    if j == i:
+                        continue
+                    self.cls_negative[i].extend(self.cls_positive[j])
+
+            self.cls_positive = [np.asarray(self.cls_positive[i]) for i in range(num_classes)]
+            self.cls_negative = [np.asarray(self.cls_negative[i]) for i in range(num_classes)]
+            self.cls_positive = np.asarray(self.cls_positive)
+            self.cls_negative = np.asarray(self.cls_negative)
+    
+
+    def transform_sample(self, img, indx=None):
+        if indx is not None:
+            out = transforms.functional.resized_crop(img, indx[0], indx[1], indx[2], indx[3], (32,32))
+        else:
+            out = img
+        out = self.color_transform(out)
+        out = transforms.RandomHorizontalFlip()(out)
+        out = transforms.functional.to_tensor(out)
+        out = self.normalize(out)
+        return out
+
+
+    def __getitem__(self, item):
+
+        img = np.asarray(self.imgs[item]).astype('uint8')
+        if self.partition == 'train':
+            img = transforms.RandomCrop(32, padding=4)(Image.fromarray(img))
+        else:
+            img = Image.fromarray(img)
+
+        #img2 = self.transform_sample(img, [np.random.randint(10), 0, 22, 32])
+        #img3 = self.transform_sample(img, [0, np.random.randint(10), 32, 22])
+        #img4 = self.transform_sample(img, [np.random.randint(10), np.random.randint(10), 22, 22])
+
+        if self.partition == 'train':
+            img = self.transform_sample(img)
+        else:
+            img = transforms.functional.to_tensor(img)
+            img = self.normalize(img)
+
+        target = self.labels[item] - min(self.labels)
+
+        if not self.is_sample:
+            return img, target, item
+        else:
+            pos_idx = item
+            replace = True if self.k > len(self.cls_negative[target]) else False
+            neg_idx = np.random.choice(self.cls_negative[target], self.k, replace=replace)
+            sample_idx = np.hstack((np.asarray([pos_idx]), neg_idx))
+            return img, target, item, sample_idx
+
+    def __len__(self):
+        return len(self.labels)
+
     
 class CIFAR100_toy(Dataset):
     """support FC100 and CIFAR-FS"""
