@@ -23,6 +23,8 @@ from eval.meta_eval import meta_test, meta_test_tune
 from eval.cls_eval import validate, embedding
 from dataloader import get_dataloaders
 
+from train_6240 import splitlow_commonhigh
+
 mkl.set_num_threads(2)
 
 
@@ -38,7 +40,7 @@ def parse_option():
 
     # dataset
     parser.add_argument('--dataset', type=str, default='miniImageNet', choices=['miniImageNet', 'tieredImageNet',
-                                                                                'CIFAR-FS', 'FC100', "toy"])
+                                                                                'CIFAR-FS', 'FC100', "toy","cross_domain"])
     parser.add_argument('--transform', type=str, default='A', choices=transforms_list)
 
     # specify data_root
@@ -65,7 +67,15 @@ def parse_option():
 
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     
+    parser.add_argument(
+        '--gpu',
+        type=str,
+        default='0',
+        help='Select gpu to use')
+    
     opt = parser.parse_args()
+    
+    os.environ["CUDA_VISIBLE_DEVICES"] = opt.gpu
     
     if opt.dataset == 'CIFAR-FS' or opt.dataset == 'FC100':
         opt.transform = 'D'
@@ -76,13 +86,13 @@ def parse_option():
         opt.use_trainval = False
 
     # set the path according to the environment
-    if not opt.data_root:
+    '''if not opt.data_root:
         opt.data_root = './data/{}'.format(opt.dataset)
     else:
         if(opt.dataset=="toy"):
             opt.data_root = '{}/{}'.format(opt.data_root, "CIFAR-FS")
         else:   
-            opt.data_root = '{}/{}'.format(opt.data_root, opt.dataset)
+            opt.data_root = '{}/{}'.format(opt.data_root, opt.dataset)#'''
     opt.data_aug = True
 
     return opt
@@ -93,10 +103,13 @@ def main():
     opt = parse_option()
 
     opt.n_test_runs = 600
+    opt.trans = 1
+    opt.memfeature_size = 64
     train_loader, val_loader, meta_testloader, meta_valloader, n_cls, _ = get_dataloaders(opt)
 
     # load model
-    model = create_model(opt.model, n_cls, opt.dataset, n_trans=opt.n_trans)
+    #model = create_model(opt.model, n_cls, opt.dataset, n_trans=opt.n_trans)
+    model = splitlow_commonhigh(opt, n_cls, is_training=False)
     ckpt = torch.load(opt.model_path)["model"]
 
     from collections import OrderedDict

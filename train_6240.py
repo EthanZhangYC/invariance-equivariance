@@ -213,12 +213,13 @@ class MMClassifier_domain(nn.Module):
 
 
 class splitlow_commonhigh(nn.Module):
-    def __init__(self, args, n_cls):
+    def __init__(self, args, n_cls, is_training=False):
         super(splitlow_commonhigh, self).__init__()
 
         self.class_numbers = n_cls
         self.args = args
         self.batch_size = args.batch_size
+        self.is_training=is_training
 
         # model define
         self.model_p1 = eval(args.model+'_1st_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, no_trans=args.trans, embd_size=args.memfeature_size)
@@ -257,13 +258,13 @@ class splitlow_commonhigh(nn.Module):
         #logger.info(model_c)
 
 
-    def forward(self, images_s, images_t=None, is_training=False, inductive=False):
-        if is_training:
+    def forward(self, images_s, images_t=None, inductive=False, is_feat=False):
+        if self.is_training:
             f0_s,f1_s = self.model_p1(images_s)
             f0_t,f1_t = self.model_p2(images_t)
             mid_features = torch.cat([f1_s, f1_t], dim=0)
             
-            pred, conv_feat, eq_logit, inv_logit = self.model_c(mid_features, inductive=inductive)
+            pred, conv_feat, eq_logit, inv_logit = self.model_c(mid_features, inductive=inductive, is_feat=is_feat)
             pred_s, pred_t = pred[:self.batch_size], pred[self.batch_size:]
             conv_feat_s, conv_feat_t = conv_feat[:self.batch_size], conv_feat[self.batch_size:]
             eq_logit_s, eq_logit_t = eq_logit[:self.batch_size], eq_logit[self.batch_size:]
@@ -274,10 +275,9 @@ class splitlow_commonhigh(nn.Module):
             
             return (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t)
         else:
-            _,f = self.model_p1(images_s)
-            pred_s,_,_,feature_s,_ = self.model_c(f, is_training=False, batch_size=self.args.batch_size)
-            return pred_s, feature_s
-
+            f0,f1 = self.model_p1(images_s)
+            [f2, f3, feat], pred = self.model_c(f1, is_feat=is_feat)
+            return [f0, f1, f2, f3, feat], pred
 
 
 
@@ -292,7 +292,7 @@ def main():
     train_loader, val_loader, meta_testloader, meta_valloader, n_cls, no_sample = get_dataloaders(args)
     # model
     #model = create_model(args.model, n_cls, args.dataset, n_trans=args.trans, embd_sz=args.memfeature_size)
-    model = splitlow_commonhigh(args, n_cls)
+    model = splitlow_commonhigh(args, n_cls, is_training=True)
     #wandb.watch(model)
     
     # optimizer
@@ -430,7 +430,7 @@ def train(epoch, train_loader, model, criterion, optimizer, args, MemBank):
 
             # ===================forward=====================
             #_, (train_logit, eq_logit, inv_rep) = model(input, inductive=True)
-            (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(image_s, image_t, is_training=True, inductive=True)
+            (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(image_s, image_t, inductive=True)
 
             # ===================memory bank of negatives for current batch=====================
             np.random.shuffle(train_indices)

@@ -21,26 +21,27 @@ class CUB(Dataset):
         self.color_transform = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4)
         self.pretrain = pretrain
 
-
         self.id_list=[]
         if partition=='train':
-            with open(os.path.join(self.data_root, 'CUB_200_2011/train_test_split.txt'), 'r') as f:
-                file_content = f.readlines()
-                self.id_list = [int(line.strip().split(' ')[0]) for line in file_content if line.strip().split(' ')[1]=='1']
-        elif partition=='val' or partition=='test':
-            with open(os.path.join(self.data_root, 'CUB_200_2011/train_test_split.txt'), 'r') as f:
-                file_content = f.readlines()
-                self.id_list = [int(line.strip().split(' ')[0]) for line in file_content if line.strip().split(' ')[1]=='0']
-            
+            id_file_dir = os.path.join(self.data_root, 'CUB_200_2011/base.json')
+        elif partition=='val':
+            id_file_dir = os.path.join(self.data_root, 'CUB_200_2011/val.json')
+        elif partition=='test':
+            id_file_dir = os.path.join(self.data_root, 'CUB_200_2011/novel.json')
+        with open(id_file_dir, 'r') as f:
+            file_content = f.readlines()
+            self.id_list = [int(line.strip()) for line in file_content]
+        
         self.id2path={}
         with open(os.path.join(self.data_root, 'CUB_200_2011/images.txt'), 'r') as f:
             file_content = f.readlines()
             self.id2path = {int(line.strip().split(' ')[0]):line.strip().split(' ')[1] for line in file_content}
-        
+            
         imgs = []
         labels = []
         for train_id in self.id_list:
-            imgs.append(self.id2path[train_id])
+            #imgs.append(self.id2path[train_id])
+            imgs.append(train_id)
             label=int(self.id2path[train_id].split('.')[0])
             labels.append(label)
         self.imgs=imgs
@@ -85,7 +86,7 @@ class CUB(Dataset):
 
     def __getitem__(self, index):
         #img = np.asarray(self.imgs[item]).astype('uint8')
-        img_dir = self.data_root + '/CUB_200_2011/images/' + self.imgs[index]
+        img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[self.imgs[index]]
         img = Image.open(img_dir).convert('RGB')
         if self.partition == 'train':
             img = transforms.RandomCrop(84, padding=8)(img)
@@ -126,7 +127,7 @@ class MetaCUB(CUB):
         self.n_ways = args.n_ways
         self.n_shots = args.n_shots
         self.n_queries = args.n_queries
-        self.classes = list(self.data.keys())
+        #self.classes = list(self.data.keys())
         self.n_test_runs = args.n_test_runs
         self.n_aug_support_samples = args.n_aug_support_samples
         if train_transform is None:
@@ -152,11 +153,12 @@ class MetaCUB(CUB):
             self.test_transform = test_transform
 
         self.data = {}
-        for idx in range(self.imgs.shape[0]):
+        for idx in range(len(self.imgs)):
             if self.labels[idx] not in self.data:
                 self.data[self.labels[idx]] = []
             self.data[self.labels[idx]].append(self.imgs[idx])
         self.classes = list(self.data.keys())
+
 
     def __getitem__(self, item):
         if self.fix_seed:
@@ -168,15 +170,36 @@ class MetaCUB(CUB):
         query_ys = []
         for idx, cls in enumerate(cls_sampled):
             imgs = np.asarray(self.data[cls]).astype('uint8')
+            #img_dir = self.data_root + '/CUB_200_2011/images/' + self.data[cls]
+            #imgs = Image.open(img_dir).convert('RGB')
+        
             support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
-            support_xs.append(imgs[support_xs_ids_sampled])
+            support_xs_batch=[]
+            for id in support_xs_ids_sampled:
+                img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[self.imgs[id]]
+                img = Image.open(img_dir).convert('RGB')
+                img = transforms.Resize(84)(img)
+                img = transforms.CenterCrop(84)(img)
+                support_xs_batch.append(np.array(img))
+            #support_xs.append(imgs[support_xs_ids_sampled])
+            support_xs.append(support_xs_batch)
+            
             support_ys.append([idx] * self.n_shots)
             query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
             query_xs_ids = np.random.choice(query_xs_ids, self.n_queries, False)
-            query_xs.append(imgs[query_xs_ids])
+            query_xs_batch=[]
+            for id in query_xs_ids:
+                img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[self.imgs[id]]
+                img = Image.open(img_dir).convert('RGB')
+                img = transforms.Resize(84)(img)
+                img = transforms.CenterCrop(84)(img)
+                query_xs_batch.append(np.array(img))
+            #query_xs.append(imgs[query_xs_ids])
+            query_xs.append(query_xs_batch)
             query_ys.append([idx] * query_xs_ids.shape[0])
         support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(
             query_xs), np.array(query_ys)
+        
         num_ways, n_queries_per_way, height, width, channel = query_xs.shape
         query_xs = query_xs.reshape((num_ways * n_queries_per_way, height, width, channel))
         query_ys = query_ys.reshape((num_ways * n_queries_per_way, ))

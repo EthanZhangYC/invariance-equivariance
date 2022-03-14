@@ -55,12 +55,12 @@ def get_dataloaders(opt):
                                 num_workers=opt.num_workers // 2)
 
         train_trans, test_trans = transforms_test_options[opt.transform]
-        meta_testloader = DataLoader(MetaImageNet(args=opt, partition='test',
+        meta_testloader = DataLoader(MetaCUB(args=opt, partition='test',
                                                   train_transform=train_trans,
                                                   test_transform=test_trans),
                                      batch_size=opt.test_batch_size, shuffle=False, drop_last=False,
                                      num_workers=opt.num_workers)
-        meta_valloader = DataLoader(MetaImageNet(args=opt, partition='val',
+        meta_valloader = DataLoader(MetaCUB(args=opt, partition='val',
                                                  train_transform=train_trans,
                                                  test_transform=test_trans),
                                     batch_size=opt.test_batch_size, shuffle=False, drop_last=False,

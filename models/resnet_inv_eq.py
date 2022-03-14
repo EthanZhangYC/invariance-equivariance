@@ -395,9 +395,9 @@ class ResNet_2ndhalf(nn.Module):
 
     def forward(self, x, is_feat=False, inductive=False):
         x = self.layer3(x)
-        #f2 = x
+        f2 = x
         x = self.layer4(x)
-        #f3 = x
+        f3 = x
         if self.keep_avg_pool:
             x = self.avgpool(x)
         x = x.view(x.size(0), -1)
@@ -411,7 +411,7 @@ class ResNet_2ndhalf(nn.Module):
             return [f2, f3, feat], (xx, yy, zz)
         
         if is_feat:
-            return [f2, f3, feat], xx
+            return [f2, f3, conv_feat], pred
 
         else:
             return pred
