@@ -6,6 +6,60 @@ import matplotlib.pyplot as plt
 import os
 import sys
 from dataloader import get_dataloaders
+import time, datetime
+from pathlib import Path
+import shutil
+import logging
+
+
+'''record configurations'''
+class record_config():
+    def __init__(self, args):
+        now = datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
+        today = datetime.date.today()
+
+        self.args = args
+        self.job_dir = Path(args.job_dir)
+
+        def _make_dir(path):
+            if not os.path.exists(path):
+                os.makedirs(path)
+
+        _make_dir(self.job_dir)
+
+        config_dir = self.job_dir / 'config.txt'
+        #if not os.path.exists(config_dir):
+        #if args.resume:
+        with open(config_dir, 'a') as f:
+            f.write(now + '\n\n')
+            for arg in vars(args):
+                f.write('{}: {}\n'.format(arg, getattr(args, arg)))
+            f.write('\n')
+        '''else:
+            with open(config_dir, 'w') as f:
+                f.write(now + '\n\n')
+                for arg in vars(args):
+                    f.write('{}: {}\n'.format(arg, getattr(args, arg)))
+                f.write('\n')#'''
+
+
+def get_logger(file_path):
+
+    logger = logging.getLogger('gal')
+    log_format = '%(asctime)s | %(message)s'
+    formatter = logging.Formatter(log_format, datefmt='%m/%d %I:%M:%S %p')
+    file_handler = logging.FileHandler(file_path)
+    file_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    logger.addHandler(stream_handler)
+    logger.setLevel(logging.INFO)
+
+    return logger
+
+
 
 
 class LabelSmoothing(nn.Module):

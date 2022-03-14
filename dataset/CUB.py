@@ -8,7 +8,7 @@ import torchvision.transforms as transforms
 import random
 
 
-class ImageNet(Dataset):
+class CUB(Dataset):
     def __init__(self, args, partition='train', pretrain=True, is_sample=False, k=4096,
                  transform=None):
         super(Dataset, self).__init__()
@@ -21,16 +21,31 @@ class ImageNet(Dataset):
         self.color_transform = transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4)
         self.pretrain = pretrain
 
-        if self.pretrain:
-            self.file_pattern = 'miniImageNet/miniImageNet_category_split_train_phase_%s.pickle'           
-        else:
-            self.file_pattern = 'miniImageNet/miniImageNet_category_split_%s.pickle'           
-        self.data = {}
-        with open(os.path.join(self.data_root, self.file_pattern % partition), 'rb') as f:
-            data = pickle.load(f, encoding='latin1')
-            self.imgs = data['data']
-            self.labels = data['labels']
+
+        self.id_list=[]
+        if partition=='train':
+            with open(os.path.join(self.data_root, 'CUB_200_2011/train_test_split.txt'), 'r') as f:
+                file_content = f.readlines()
+                self.id_list = [int(line.strip().split(' ')[0]) for line in file_content if line.strip().split(' ')[1]=='1']
+        elif partition=='val' or partition=='test':
+            with open(os.path.join(self.data_root, 'CUB_200_2011/train_test_split.txt'), 'r') as f:
+                file_content = f.readlines()
+                self.id_list = [int(line.strip().split(' ')[0]) for line in file_content if line.strip().split(' ')[1]=='0']
+            
+        self.id2path={}
+        with open(os.path.join(self.data_root, 'CUB_200_2011/images.txt'), 'r') as f:
+            file_content = f.readlines()
+            self.id2path = {int(line.strip().split(' ')[0]):line.strip().split(' ')[1] for line in file_content}
         
+        imgs = []
+        labels = []
+        for train_id in self.id_list:
+            imgs.append(self.id2path[train_id])
+            label=int(self.id2path[train_id].split('.')[0])
+            labels.append(label)
+        self.imgs=imgs
+        self.labels=labels
+         
         # pre-process for contrastive sampling
         self.k = k
         self.is_sample = is_sample
@@ -68,12 +83,14 @@ class ImageNet(Dataset):
         return out
 
 
-    def __getitem__(self, item):
-        img = np.asarray(self.imgs[item]).astype('uint8')
+    def __getitem__(self, index):
+        #img = np.asarray(self.imgs[item]).astype('uint8')
+        img_dir = self.data_root + '/CUB_200_2011/images/' + self.imgs[index]
+        img = Image.open(img_dir).convert('RGB')
         if self.partition == 'train':
-            img = transforms.RandomCrop(84, padding=8)(Image.fromarray(img))
-        else:
-            img = Image.fromarray(img)
+            img = transforms.RandomCrop(84, padding=8)(img)
+        #else:
+        #    img = Image.fromarray(img)
         
         #img2 = self.transform_sample(img, [np.random.randint(28), 0, 56, 84])
         #img3 = self.transform_sample(img, [0, np.random.randint(28), 84, 56])
@@ -85,9 +102,8 @@ class ImageNet(Dataset):
             img = transforms.functional.to_tensor(img)
             img = self.normalize(img)
 
-        target = self.labels[item] - min(self.labels)
-    
-        return img, target, item
+        target = self.labels[index] - min(self.labels)
+        return img, target, index
         
         if not self.is_sample:
             return img, img2, img3, img4, target, item
@@ -102,10 +118,10 @@ class ImageNet(Dataset):
         return len(self.labels)
 
 
-class MetaImageNet(ImageNet):
+class MetaCUB(CUB):
     
     def __init__(self, args, partition='train', train_transform=None, test_transform=None, fix_seed=True):
-        super(MetaImageNet, self).__init__(args, partition, False)
+        super(MetaCUB, self).__init__(args, partition, False)
         self.fix_seed = fix_seed
         self.n_ways = args.n_ways
         self.n_shots = args.n_shots
@@ -181,23 +197,3 @@ class MetaImageNet(ImageNet):
     def __len__(self):
         return self.n_test_runs
     
-    
-if __name__ == '__main__':
-    args = lambda x: None
-    args.n_ways = 5
-    args.n_shots = 1
-    args.n_queries = 12
-    args.data_root = 'data'
-    args.data_aug = True
-    args.n_test_runs = 5
-    args.n_aug_support_samples = 1
-    imagenet = ImageNet(args, 'val')
-    print(len(imagenet))
-    print(imagenet.__getitem__(500)[0].shape)
-    
-    metaimagenet = MetaImageNet(args)
-    print(len(metaimagenet))
-    print(metaimagenet.__getitem__(500)[0].size())
-    print(metaimagenet.__getitem__(500)[1].shape)
-    print(metaimagenet.__getitem__(500)[2].size())
-    print(metaimagenet.__getitem__(500)[3].shape)
