@@ -163,40 +163,43 @@ class MetaCUB(CUB):
     def __getitem__(self, item):
         if self.fix_seed:
             np.random.seed(item)
-        cls_sampled = np.random.choice(self.classes, self.n_ways, False)
+        cls_sampled = np.random.choice(self.classes, self.n_ways, False) # sample 5 class-id from novel classes
         support_xs = []
         support_ys = []
         query_xs = []
         query_ys = []
         for idx, cls in enumerate(cls_sampled):
-            imgs = np.asarray(self.data[cls]).astype('uint8')
-            #img_dir = self.data_root + '/CUB_200_2011/images/' + self.data[cls]
-            #imgs = Image.open(img_dir).convert('RGB')
-        
-            support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
+            imgs_from_cls = np.asarray(self.data[cls])#.astype('uint8')
+            
+            #support_xs_ids_sampled = np.random.choice(range(imgs.shape[0]), self.n_shots, False)
+            support_xs_ids_sampled = np.random.choice(imgs_from_cls, self.n_shots, False)
             support_xs_batch=[]
             for id in support_xs_ids_sampled:
-                img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[self.imgs[id]]
+                img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[id]
                 img = Image.open(img_dir).convert('RGB')
                 img = transforms.Resize(84)(img)
                 img = transforms.CenterCrop(84)(img)
                 support_xs_batch.append(np.array(img))
             #support_xs.append(imgs[support_xs_ids_sampled])
             support_xs.append(support_xs_batch)
+            #support_ys.append([idx] * self.n_shots)
+            support_ys.append([cls] * self.n_shots)
             
-            support_ys.append([idx] * self.n_shots)
-            query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
+            #query_xs_ids = np.setxor1d(np.arange(imgs.shape[0]), support_xs_ids_sampled)
+            query_xs_ids = np.setxor1d(imgs_from_cls, support_xs_ids_sampled)
             query_xs_ids = np.random.choice(query_xs_ids, self.n_queries, False)
             query_xs_batch=[]
             for id in query_xs_ids:
-                img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[self.imgs[id]]
+                img_dir = self.data_root + '/CUB_200_2011/images/' + self.id2path[id]
                 img = Image.open(img_dir).convert('RGB')
                 img = transforms.Resize(84)(img)
                 img = transforms.CenterCrop(84)(img)
                 query_xs_batch.append(np.array(img))
             #query_xs.append(imgs[query_xs_ids])
             query_xs.append(query_xs_batch)
-            query_ys.append([idx] * query_xs_ids.shape[0])
+            #query_ys.append([idx] * query_xs_ids.shape[0])
+            query_ys.append([cls] * query_xs_ids.shape[0])
+                        
         support_xs, support_ys, query_xs, query_ys = np.array(support_xs), np.array(support_ys), np.array(
             query_xs), np.array(query_ys)
         

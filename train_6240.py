@@ -91,6 +91,16 @@ def parse_option():
         type=str,
         default='0',
         help='Select gpu to use')
+    parser.add_argument(
+        "--lambda_domain", 
+        type=float, 
+        default=0.1,
+        help="coefficient of domain loss")
+    parser.add_argument(
+        "--lambda_h", 
+        type=float, 
+        default=0.1,
+        help="coefficient of entropy loss")
     
     args = parser.parse_args()
     
@@ -121,10 +131,10 @@ def parse_option():
     for it in iterations:
         args.lr_decay_epochs.append(int(it))
         
-    tags = args.tags.split(',')
+    '''tags = args.tags.split(',')
     args.tags = list([])
     for it in tags:
-        args.tags.append(it)
+        args.tags.append(it)#'''
 
     args.model_name = '{}_{}_lr_{}_decay_{}_trans_{}'.format(args.model, args.dataset, args.learning_rate, args.weight_decay, args.transform)
 
@@ -209,7 +219,14 @@ class MMClassifier_domain(nn.Module):
         x = self.fc3(x)
         return x
 
+class HLoss(nn.Module):
+    def __init__(self):
+        super(HLoss, self).__init__()
 
+    def forward(self, x):
+        b = F.softmax(x, dim=1) * F.log_softmax(x, dim=1)
+        b = -1.0 * b.sum()
+        return b
 
 
 class splitlow_commonhigh(nn.Module):
@@ -309,6 +326,7 @@ def main():
                               weight_decay=args.weight_decay)
 
     criterion = nn.CrossEntropyLoss()
+    h_loss = HLoss()
 
     '''if torch.cuda.is_available():
         if args.n_gpu > 1:
@@ -336,7 +354,7 @@ def main():
         print("==> training...")
         
         time1 = time.time()
-        train_acc, train_loss, MemBank = train(epoch, train_loader, model, criterion, optimizer,args, MemBank)
+        train_acc, train_loss, MemBank = train(epoch, train_loader, model, criterion, h_loss, optimizer,args, MemBank)
         time2 = time.time()
         print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
@@ -394,13 +412,16 @@ def main():
         print("Error: %s file not found" % output_log_file)
         
       
-def train(epoch, train_loader, model, criterion, optimizer, args, MemBank):
+def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBank):
     """One epoch training"""
     model.train()
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    losses_ce = AverageMeter()
+    losses_h = AverageMeter()
+    losses_domain = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
     train_indices = list(range(len(MemBank)))
@@ -431,9 +452,11 @@ def train(epoch, train_loader, model, criterion, optimizer, args, MemBank):
             # ===================forward=====================
             #_, (train_logit, eq_logit, inv_rep) = model(input, inductive=True)
             (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(image_s, image_t, inductive=True)
+            
+            loss_domain = args.lambda_domain * (criterion(pred_domain_s, torch.LongTensor(batch_size).fill_(0).cuda()) + criterion(pred_domain_t, torch.LongTensor(batch_size).fill_(1).cuda()))
 
             # ===================memory bank of negatives for current batch=====================
-            np.random.shuffle(train_indices)
+            '''np.random.shuffle(train_indices)
             mn_indices_all = np.array(list(set(train_indices) - set(indices_s)))
             np.random.shuffle(mn_indices_all)
             mn_indices = mn_indices_all[:args.membank_size]
@@ -441,27 +464,33 @@ def train(epoch, train_loader, model, criterion, optimizer, args, MemBank):
             mem_rep_of_batch_imgs = MemBank[indices_s]#'''
 
             loss_ce = criterion(pred_s, target_s)
+            loss_h = args.lambda_h * h_loss(pred_t)
             #loss_eq = criterion(eq_logit_s, proxy_labels)
 
-            inv_rep_0 = inv_logit_s[:batch_size, :]
+            '''inv_rep_0 = inv_logit_s[:batch_size, :]
             loss_inv = simple_contrstive_loss(mem_rep_of_batch_imgs, inv_rep_0, mn_arr, args.contrast_temp)
             for ii in range(1, args.trans):
                 loss_inv += simple_contrstive_loss(inv_rep_0, inv_logit_s[(ii*batch_size):((ii+1)*batch_size), :], mn_arr, args.contrast_temp)
             loss_inv = loss_inv/args.trans#'''
 
             #loss = args.gamma * (loss_eq + loss_inv) + loss_ce
-            loss = args.gamma * (loss_inv) + loss_ce
+            #loss = args.gamma * (loss_inv) + loss_ce
+            loss = loss_ce + loss_domain + loss_h
+
             
             n=image_s.size(0)
             acc1, acc5 = accuracy(pred_s, target_s, topk=(1, 5))
             losses.update(loss.item(), n)
+            losses_ce.update(loss_ce.item(), n)
+            losses_h.update(loss_h.item(), n)
+            losses_domain.update(loss_domain.item(), n)
             top1.update(acc1[0], n)
             top5.update(acc5[0], n)
 
             # ===================update memory bank======================
-            MemBankCopy = MemBank.clone().detach()
-            MemBankCopy[indices_s] = (args.mvavg_rate * MemBankCopy[indices_s]) + ((1 - args.mvavg_rate) * inv_rep_0)
-            MemBank = MemBankCopy.clone().detach()#'''
+            #MemBankCopy = MemBank.clone().detach()
+            #MemBankCopy[indices_s] = (args.mvavg_rate * MemBankCopy[indices_s]) + ((1 - args.mvavg_rate) * inv_rep_0)
+            #MemBank = MemBankCopy.clone().detach()#'''
 
             # ===================backward=====================
             optimizer.zero_grad()
@@ -474,7 +503,9 @@ def train(epoch, train_loader, model, criterion, optimizer, args, MemBank):
             
             pbar.set_postfix({"Acc@1":'{0:.2f}'.format(top1.avg.cpu().numpy()), 
                               "Acc@5":'{0:.2f}'.format(top5.avg.cpu().numpy(),2), 
-                              "Loss" :'{0:.2f}'.format(losses.avg,2),
+                              "Loss_ce" :'{0:.2f}'.format(losses_ce.avg,2),
+                              "Loss_domain" :'{0:.4f}'.format(losses_domain.avg,2),
+                              "Loss_H" :'{0:.2f}'.format(losses_h.avg,2),
                              })
 
     print('Train_Acc@1 {top1.avg:.3f} Train_Acc@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
