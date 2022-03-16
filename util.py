@@ -30,7 +30,7 @@ class record_config():
         config_dir = self.job_dir / 'config.txt'
         #if not os.path.exists(config_dir):
         #if args.resume:
-        with open(config_dir, 'a') as f:
+        with open(config_dir, 'w') as f:
             f.write(now + '\n\n')
             for arg in vars(args):
                 f.write('{}: {}\n'.format(arg, getattr(args, arg)))
@@ -143,16 +143,30 @@ def accuracy(output, target, topk=(1,)):
         return res
 
 
-def rotrate_concat(inputs):
+def rotrate_concat(inputs, angle_list=[0,90,180,270]):
     out = None
     for x in inputs:
-        x_90 = x.transpose(2,3).flip(2)
-        x_180 = x.flip(2).flip(3)
-        x_270 = x.flip(2).transpose(2,3)
+        if 90 in angle_list:
+            x_90 = x.transpose(2,3).flip(2)
+        else:
+            x_90 = torch.Tensor().cuda()
+
+        if 180 in angle_list:
+            x_180 = x.flip(2).flip(3)
+        else:
+            x_180 = torch.Tensor().cuda()
+
+        if 270 in angle_list:  
+            x_270 = x.flip(2).transpose(2,3)
+        else:
+            x_270 = torch.Tensor().cuda()
+
         if out is None:
             out = torch.cat((x, x_90, x_180, x_270),0)
         else:
             out = torch.cat((out, x, x_90, x_180, x_270),0)
+
+        #print(out.shape)
     return out
 
     
