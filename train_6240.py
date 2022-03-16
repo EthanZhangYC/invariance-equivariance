@@ -102,6 +102,9 @@ def parse_option():
         default=0.1,
         help="coefficient of entropy loss")
     
+    parser.add_argument('--multi_crop', action='store_true', help='using multi crop')
+
+    
     args = parser.parse_args()
     
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
@@ -443,7 +446,10 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
                 #indices = indices.cuda()
             batch_size = image_s.shape[0]
 
-            generated_data = rotrate_concat([image_s,image_s2,image_s3,image_s4])
+            if args.multi_crop:
+                generated_data = rotrate_concat([image_s,image_s2,image_s3,image_s4])
+            else:
+                generated_data = rotrate_concat([image_s])
             train_targets = target_s.repeat(args.trans)
             #proxy_labels = torch.zeros(args.trans*batch_size).cuda().long()
 
