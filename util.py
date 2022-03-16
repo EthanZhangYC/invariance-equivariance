@@ -2,7 +2,7 @@ from __future__ import absolute_import
 import torch
 import torch.nn as nn
 import numpy as np
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import os
 import sys
 from dataloader import get_dataloaders

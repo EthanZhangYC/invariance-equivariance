@@ -75,9 +75,9 @@ class ImageNet(Dataset):
         else:
             img = Image.fromarray(img)
         
-        #img2 = self.transform_sample(img, [np.random.randint(28), 0, 56, 84])
-        #img3 = self.transform_sample(img, [0, np.random.randint(28), 84, 56])
-        #img4 = self.transform_sample(img, [np.random.randint(28), np.random.randint(28), 56, 56])
+        img2 = self.transform_sample(img, [np.random.randint(28), 0, 56, 84])
+        img3 = self.transform_sample(img, [0, np.random.randint(28), 84, 56])
+        img4 = self.transform_sample(img, [np.random.randint(28), np.random.randint(28), 56, 56])
 
         if self.partition == 'train':
             img = self.transform_sample(img)
@@ -87,7 +87,7 @@ class ImageNet(Dataset):
 
         target = self.labels[item] - min(self.labels)
     
-        return img, target, item
+        #return img, target, item
         
         if not self.is_sample:
             return img, img2, img3, img4, target, item

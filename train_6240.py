@@ -38,7 +38,7 @@ def parse_option():
     parser.add_argument('--eval_freq', type=int, default=10, help='meta-eval frequency')
     parser.add_argument('--print_freq', type=int, default=100, help='print frequency')
     parser.add_argument('--tb_freq', type=int, default=500, help='tb frequency')
-    parser.add_argument('--save_freq', type=int, default=10, help='save frequency')
+    parser.add_argument('--save_freq', type=int, default=50, help='save frequency')
     parser.add_argument('--batch_size', type=int, default=64, help='batch_size')
     parser.add_argument('--num_workers', type=int, default=8, help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
@@ -456,7 +456,7 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
             loss_domain = args.lambda_domain * (criterion(pred_domain_s, torch.LongTensor(batch_size).fill_(0).cuda()) + criterion(pred_domain_t, torch.LongTensor(batch_size).fill_(1).cuda()))
 
             # ===================memory bank of negatives for current batch=====================
-            '''np.random.shuffle(train_indices)
+            np.random.shuffle(train_indices)
             mn_indices_all = np.array(list(set(train_indices) - set(indices_s)))
             np.random.shuffle(mn_indices_all)
             mn_indices = mn_indices_all[:args.membank_size]
@@ -467,15 +467,15 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
             loss_h = args.lambda_h * h_loss(pred_t)
             #loss_eq = criterion(eq_logit_s, proxy_labels)
 
-            '''inv_rep_0 = inv_logit_s[:batch_size, :]
+            inv_rep_0 = inv_logit_s[:batch_size, :]
             loss_inv = simple_contrstive_loss(mem_rep_of_batch_imgs, inv_rep_0, mn_arr, args.contrast_temp)
             for ii in range(1, args.trans):
                 loss_inv += simple_contrstive_loss(inv_rep_0, inv_logit_s[(ii*batch_size):((ii+1)*batch_size), :], mn_arr, args.contrast_temp)
-            loss_inv = loss_inv/args.trans#'''
+            loss_inv = args.gamma * loss_inv/args.trans#'''
 
             #loss = args.gamma * (loss_eq + loss_inv) + loss_ce
             #loss = args.gamma * (loss_inv) + loss_ce
-            loss = loss_ce + loss_domain + loss_h
+            loss = loss_ce + loss_domain + loss_h + loss_inv
 
             
             n=image_s.size(0)
@@ -488,9 +488,9 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
             top5.update(acc5[0], n)
 
             # ===================update memory bank======================
-            #MemBankCopy = MemBank.clone().detach()
-            #MemBankCopy[indices_s] = (args.mvavg_rate * MemBankCopy[indices_s]) + ((1 - args.mvavg_rate) * inv_rep_0)
-            #MemBank = MemBankCopy.clone().detach()#'''
+            MemBankCopy = MemBank.clone().detach()
+            MemBankCopy[indices_s] = (args.mvavg_rate * MemBankCopy[indices_s]) + ((1 - args.mvavg_rate) * inv_rep_0)
+            MemBank = MemBankCopy.clone().detach()#'''
 
             # ===================backward=====================
             optimizer.zero_grad()

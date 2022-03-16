@@ -103,7 +103,7 @@ def main():
     opt = parse_option()
 
     opt.n_test_runs = 600
-    opt.trans = 1
+    opt.trans = opt.n_trans
     opt.memfeature_size = 64
     train_loader, val_loader, meta_testloader, meta_valloader, n_cls, _ = get_dataloaders(opt)
 

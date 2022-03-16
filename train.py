@@ -95,10 +95,10 @@ def parse_option():
         opt.model_path = './models_pretrained'
     if not opt.tb_path:
         opt.tb_path = './tensorboard'
-    if not opt.data_root:
-        opt.data_root = './data/{}'.format(opt.dataset)
-    else:
-        opt.data_root = '{}/{}'.format(opt.data_root, opt.dataset)
+    #if not opt.data_root:
+    #    opt.data_root = './data/{}'.format(opt.dataset)
+    #else:
+    #    opt.data_root = '{}/{}'.format(opt.data_root, opt.dataset)
     opt.data_aug = True
 
     iterations = opt.lr_decay_epochs.split(',')
@@ -297,7 +297,8 @@ def train(epoch, train_loader, model, criterion, optimizer, opt, MemBank):
                 loss_inv += simple_contrstive_loss(inv_rep_0, inv_rep[(ii*batch_size):((ii+1)*batch_size), :], mn_arr, opt.contrast_temp)
             loss_inv = loss_inv/opt.trans
 
-            loss = opt.gamma * (loss_eq + loss_inv) + loss_ce
+            #loss = opt.gamma * (loss_eq + loss_inv) + loss_ce
+            loss = opt.gamma * (loss_inv) + loss_ce
             
             acc1, acc5 = accuracy(train_logit, train_targets, topk=(1, 5))
             losses.update(loss.item(), input.size(0))
