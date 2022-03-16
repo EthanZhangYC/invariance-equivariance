@@ -24,10 +24,13 @@ class CUB(Dataset):
         self.id_list=[]
         if partition=='train':
             id_file_dir = os.path.join(self.data_root, 'CUB_200_2011/base.json')
+            divide=2
         elif partition=='val':
             id_file_dir = os.path.join(self.data_root, 'CUB_200_2011/val.json')
+            divide=4
         elif partition=='test':
             id_file_dir = os.path.join(self.data_root, 'CUB_200_2011/novel.json')
+            divide=4
         with open(id_file_dir, 'r') as f:
             file_content = f.readlines()
             self.id_list = [int(line.strip()) for line in file_content]
@@ -43,6 +46,7 @@ class CUB(Dataset):
             #imgs.append(self.id2path[train_id])
             imgs.append(train_id)
             label=int(self.id2path[train_id].split('.')[0])
+            label = label//divide
             labels.append(label)
         self.imgs=imgs
         self.labels=labels
@@ -104,6 +108,7 @@ class CUB(Dataset):
             img = self.normalize(img)
 
         target = self.labels[index] - min(self.labels)
+        #target = self.labels[index] // 2
         return img, target, index
         
         if not self.is_sample:

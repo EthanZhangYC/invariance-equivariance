@@ -20,17 +20,17 @@ class ConcatDataset(torch.utils.data.Dataset):
         self.dataset0=self.datasets[0]
         self.dataset1=self.datasets[1]
 
-    def __getitem__(self, i):
-        return tuple(d[i] for d in self.datasets)
-
-    def __len__(self):
-        return min(len(d) for d in self.datasets)
-    
     #def __getitem__(self, i):
-    #    return tuple(d[i %len(d)] for d in self.datasets)
+    #    return tuple(d[i] for d in self.datasets)
 
     #def __len__(self):
-    #    return max(len(d) for d in self.datasets)
+    #    return min(len(d) for d in self.datasets)
+    
+    def __getitem__(self, i):
+        return tuple(d[i %len(d)] for d in self.datasets)
+
+    def __len__(self):
+        return max(len(d) for d in self.datasets)
 
    
 def get_dataloaders(opt):

@@ -282,13 +282,13 @@ class splitlow_commonhigh(nn.Module):
             mid_features = torch.cat([f1_s, f1_t], dim=0)
             
             pred, conv_feat, eq_logit, inv_logit = self.model_c(mid_features, inductive=inductive, is_feat=is_feat)
-            pred_s, pred_t = pred[:self.batch_size], pred[self.batch_size:]
-            conv_feat_s, conv_feat_t = conv_feat[:self.batch_size], conv_feat[self.batch_size:]
-            eq_logit_s, eq_logit_t = eq_logit[:self.batch_size], eq_logit[self.batch_size:]
-            inv_logit_s, inv_logit_t = inv_logit[:self.batch_size], inv_logit[self.batch_size:]
+            pred_s, pred_t = pred[:-self.batch_size], pred[-self.batch_size:]
+            conv_feat_s, conv_feat_t = conv_feat[:-self.batch_size], conv_feat[-self.batch_size:]
+            eq_logit_s, eq_logit_t = eq_logit[:-self.batch_size], eq_logit[-self.batch_size:]
+            inv_logit_s, inv_logit_t = inv_logit[:-self.batch_size], inv_logit[-self.batch_size:]
             
             pred_domain = self.model_d(mid_features)
-            pred_domain_s, pred_domain_t = pred_domain[:self.args.batch_size], pred_domain[self.args.batch_size:]
+            pred_domain_s, pred_domain_t = pred_domain[:-self.args.batch_size], pred_domain[-self.args.batch_size:]
             
             return (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t)
         else:
@@ -429,11 +429,12 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
     end = time.time()
     with tqdm(train_loader, total=len(train_loader)) as pbar:
         #for _, (input, input2, input3, input4, target, indices) in enumerate(pbar):
-        for _, ((image_s, target_s, indices_s), (image_t, _, indices_t)) in enumerate(pbar):
+        for _, ((image_s,image_s2,image_s3,image_s4, target_s, indices_s), (image_t, _, indices_t)) in enumerate(pbar):
             data_time.update(time.time() - end)
 
             if torch.cuda.is_available():
-                image_s, target_s, indices_s, image_t, indices_t= image_s.cuda(), target_s.cuda(), indices_s.cuda(), image_t.cuda(), indices_t.cuda()
+                image_t, indices_t= image_t.cuda(), indices_t.cuda()
+                image_s,image_s2,image_s3,image_s4,target_s,indices_s=image_s.cuda(),image_s2.cuda(),image_s3.cuda(),image_s4.cuda(),target_s.cuda(),indices_s.cuda(),
                 #input = input.cuda()
                 #input2 = input2.cuda()
                 #input3 = input3.cuda()
@@ -442,8 +443,8 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
                 #indices = indices.cuda()
             batch_size = image_s.shape[0]
 
-            #generated_data = rotrate_concat([input, input2, input3, input4])
-            #train_targets = target.repeat(args.trans)
+            generated_data = rotrate_concat([image_s,image_s2,image_s3,image_s4])
+            train_targets = target_s.repeat(args.trans)
             #proxy_labels = torch.zeros(args.trans*batch_size).cuda().long()
 
             #for ii in range(args.trans):
@@ -451,23 +452,23 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
 
             # ===================forward=====================
             #_, (train_logit, eq_logit, inv_rep) = model(input, inductive=True)
-            (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(image_s, image_t, inductive=True)
+            (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(generated_data, image_t, inductive=True)
             
-            loss_domain = args.lambda_domain * (criterion(pred_domain_s, torch.LongTensor(batch_size).fill_(0).cuda()) + criterion(pred_domain_t, torch.LongTensor(batch_size).fill_(1).cuda()))
+            #loss_domain = args.lambda_domain * (criterion(pred_domain_s, torch.LongTensor(batch_size).fill_(0).cuda()) + criterion(pred_domain_t, torch.LongTensor(batch_size).fill_(1).cuda()))
 
             # ===================memory bank of negatives for current batch=====================
-            np.random.shuffle(train_indices)
+            '''np.random.shuffle(train_indices)
             mn_indices_all = np.array(list(set(train_indices) - set(indices_s)))
             np.random.shuffle(mn_indices_all)
             mn_indices = mn_indices_all[:args.membank_size]
             mn_arr = MemBank[mn_indices]
             mem_rep_of_batch_imgs = MemBank[indices_s]#'''
 
-            loss_ce = criterion(pred_s, target_s)
+            loss_ce = criterion(pred_s, train_targets)
             loss_h = args.lambda_h * h_loss(pred_t)
             #loss_eq = criterion(eq_logit_s, proxy_labels)
 
-            inv_rep_0 = inv_logit_s[:batch_size, :]
+            '''inv_rep_0 = inv_logit_s[:batch_size, :]
             loss_inv = simple_contrstive_loss(mem_rep_of_batch_imgs, inv_rep_0, mn_arr, args.contrast_temp)
             for ii in range(1, args.trans):
                 loss_inv += simple_contrstive_loss(inv_rep_0, inv_logit_s[(ii*batch_size):((ii+1)*batch_size), :], mn_arr, args.contrast_temp)
@@ -475,22 +476,22 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
 
             #loss = args.gamma * (loss_eq + loss_inv) + loss_ce
             #loss = args.gamma * (loss_inv) + loss_ce
-            loss = loss_ce + loss_domain + loss_h + loss_inv
+            loss = loss_ce + loss_h #+loss_domain 
 
             
             n=image_s.size(0)
-            acc1, acc5 = accuracy(pred_s, target_s, topk=(1, 5))
+            acc1, acc5 = accuracy(pred_s, train_targets, topk=(1, 5))
             losses.update(loss.item(), n)
             losses_ce.update(loss_ce.item(), n)
             losses_h.update(loss_h.item(), n)
-            losses_domain.update(loss_domain.item(), n)
+            #losses_domain.update(loss_domain.item(), n)
             top1.update(acc1[0], n)
             top5.update(acc5[0], n)
 
             # ===================update memory bank======================
-            MemBankCopy = MemBank.clone().detach()
-            MemBankCopy[indices_s] = (args.mvavg_rate * MemBankCopy[indices_s]) + ((1 - args.mvavg_rate) * inv_rep_0)
-            MemBank = MemBankCopy.clone().detach()#'''
+            #MemBankCopy = MemBank.clone().detach()
+            #MemBankCopy[indices_s] = (args.mvavg_rate * MemBankCopy[indices_s]) + ((1 - args.mvavg_rate) * inv_rep_0)
+            #MemBank = MemBankCopy.clone().detach()#'''
 
             # ===================backward=====================
             optimizer.zero_grad()
