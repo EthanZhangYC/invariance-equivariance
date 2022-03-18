@@ -255,7 +255,7 @@ class ResNet(nn.Module):
 class ResNet_1sthalf(nn.Module):
 
     def __init__(self, block, n_blocks, keep_prob=1.0, avg_pool=False, drop_rate=0.0,
-                 dropblock_size=5, num_classes=-1, no_trans=16, embd_size=64, use_se=False):
+                 dropblock_size=5, num_classes=-1, use_se=False):
         super(ResNet_1sthalf, self).__init__()
 
         self.inplanes = 3

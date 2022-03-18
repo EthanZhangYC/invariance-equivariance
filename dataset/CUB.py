@@ -97,9 +97,9 @@ class CUB(Dataset):
         #else:
         #    img = Image.fromarray(img)
         
-        #img2 = self.transform_sample(img, [np.random.randint(28), 0, 56, 84])
-        #img3 = self.transform_sample(img, [0, np.random.randint(28), 84, 56])
-        #img4 = self.transform_sample(img, [np.random.randint(28), np.random.randint(28), 56, 56])
+        img2 = self.transform_sample(img, [np.random.randint(28), 0, 56, 84])
+        img3 = self.transform_sample(img, [0, np.random.randint(28), 84, 56])
+        img4 = self.transform_sample(img, [np.random.randint(28), np.random.randint(28), 56, 56])
 
         if self.partition == 'train':
             img = self.transform_sample(img)
@@ -109,10 +109,10 @@ class CUB(Dataset):
 
         target = self.labels[index] - min(self.labels)
         #target = self.labels[index] // 2
-        return img, target, index
+        #return img, target, index
         
         if not self.is_sample:
-            return img, img2, img3, img4, target, item
+            return img, img2, img3, img4, target, index
         else:
             pos_idx = item
             replace = True if self.k > len(self.cls_negative[target]) else False

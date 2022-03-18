@@ -84,7 +84,8 @@ def parse_option():
     parser.add_argument('--membank_size', type=int, default=6400, help='temperature for contrastive ssl loss')
     parser.add_argument('--memfeature_size', type=int, default=64, help='temperature for contrastive ssl loss')
     parser.add_argument('--mvavg_rate', type=float, default=0.99, help='temperature for contrastive ssl loss')
-    parser.add_argument('--trans', type=int, default=16, help='number of transformations')
+    parser.add_argument('--trans_s', type=int, default=16, help='number of transformations')
+    parser.add_argument('--trans_t', type=int, default=16, help='number of transformations')
     
     parser.add_argument(
         '--gpu',
@@ -104,15 +105,15 @@ def parse_option():
     parser.add_argument(
         "--lambda_eq", 
         type=float, 
-        default=1.0,
+        default=0.0,
         help="coefficient of eq loss")
     parser.add_argument(
         "--lambda_inv", 
         type=float, 
-        default=1.0,
+        default=0.0,
         help="coefficient of inv loss")
     
-    parser.add_argument('--multi_crop', action='store_true', help='using multi crop')
+    parser.add_argument('--single_crop', action='store_true', help='using multi crop')
     parser.add_argument(
         '--angle_list',
         type=str,
@@ -176,7 +177,7 @@ def parse_option():
 
     #extras
     args.fresh_start = True
-    return args
+    return args, logger
 
 
 
@@ -257,9 +258,9 @@ class splitlow_commonhigh(nn.Module):
         self.is_training=is_training
 
         # model define
-        self.model_p1 = eval(args.model+'_1st_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, no_trans=args.trans, embd_size=args.memfeature_size)
-        self.model_p2 = eval(args.model+'_1st_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, no_trans=args.trans, embd_size=args.memfeature_size)
-        self.model_c = eval(args.model+'_2nd_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, no_trans=args.trans, embd_size=args.memfeature_size)
+        self.model_p1 = eval(args.model+'_1st_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, embd_size=args.memfeature_size)
+        self.model_p2 = eval(args.model+'_1st_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, embd_size=args.memfeature_size)
+        self.model_c = eval(args.model+'_2nd_half')(avg_pool=True, drop_rate=0.1, dropblock_size=5, num_classes=n_cls, no_trans=args.trans_t, embd_size=args.memfeature_size)
         self.model_d = MMClassifier_domain(n_class=2).cuda()
         #model_clf
         
@@ -293,20 +294,20 @@ class splitlow_commonhigh(nn.Module):
         #logger.info(model_c)
 
 
-    def forward(self, images_s, images_t=None, inductive=False, is_feat=False):
+    def forward(self, images_s, images_t=None, inductive=False, is_feat=False, trans_t=16):
         if self.is_training:
             f0_s,f1_s = self.model_p1(images_s)
             f0_t,f1_t = self.model_p2(images_t)
             mid_features = torch.cat([f1_s, f1_t], dim=0)
             
             pred, conv_feat, eq_logit, inv_logit = self.model_c(mid_features, inductive=inductive, is_feat=is_feat)
-            pred_s, pred_t = pred[:-self.batch_size], pred[-self.batch_size:]
-            conv_feat_s, conv_feat_t = conv_feat[:-self.batch_size], conv_feat[-self.batch_size:]
-            eq_logit_s, eq_logit_t = eq_logit[:-self.batch_size], eq_logit[-self.batch_size:]
-            inv_logit_s, inv_logit_t = inv_logit[:-self.batch_size], inv_logit[-self.batch_size:]
+            pred_s, pred_t = pred[:-self.batch_size*trans_t], pred[-self.batch_size*trans_t:]
+            conv_feat_s, conv_feat_t = conv_feat[:-self.batch_size*trans_t], conv_feat[-self.batch_size*trans_t:]
+            eq_logit_s, eq_logit_t = eq_logit[:-self.batch_size*trans_t], eq_logit[-self.batch_size*trans_t:]
+            inv_logit_s, inv_logit_t = inv_logit[:-self.batch_size*trans_t], inv_logit[-self.batch_size*trans_t:]
             
             pred_domain = self.model_d(mid_features)
-            pred_domain_s, pred_domain_t = pred_domain[:-self.args.batch_size], pred_domain[-self.args.batch_size:]
+            pred_domain_s, pred_domain_t = pred_domain[:-self.args.batch_size*trans_t], pred_domain[-self.args.batch_size*trans_t:]
             
             return (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t)
         else:
@@ -318,7 +319,7 @@ class splitlow_commonhigh(nn.Module):
 
 def main():
 
-    args = parse_option()
+    args, logger = parse_option()
     #wandb.init(project=args.model_path.split("/")[-1], tags=args.tags)
     #wandb.config.update(args)
     #wandb.save('*.py')
@@ -332,12 +333,12 @@ def main():
     
     # optimizer
     if args.adam:
-        print("Adam")
+        logger.info("Adam")
         optimizer = torch.optim.Adam(model.parameters(),
                                      lr=args.learning_rate,
                                      weight_decay=0.0005)
     else:
-        print("SGD")
+        logger.info("SGD")
         optimizer = optim.SGD(model.parameters(),
                               lr=args.learning_rate,
                               momentum=args.momentum,
@@ -369,12 +370,12 @@ def main():
             scheduler.step()
         else:
             adjust_learning_rate(epoch, args, optimizer)
-        print("==> training...")
+        logger.info("==> training...")
         
         time1 = time.time()
-        train_acc, train_loss, MemBank = train(epoch, train_loader, model, criterion, h_loss, optimizer,args, MemBank)
+        train_acc, train_loss, MemBank = train(epoch, train_loader, model, criterion, h_loss, optimizer,args, MemBank, logger)
         time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
+        logger.info('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
         val_acc, val_acc_top5, val_loss = 0,0,0 #validate(val_loader, model, criterion, args)
         
@@ -382,17 +383,17 @@ def main():
         start = time.time()
         meta_val_acc, meta_val_std = 0,0 #meta_test(model, meta_valloader)
         test_time = time.time() - start
-        print('Meta Val Acc : {:.4f}, Meta Val std: {:.4f}, Time: {:.1f}'.format(meta_val_acc, meta_val_std, test_time))
+        logger.info('Meta Val Acc : {:.4f}, Meta Val std: {:.4f}, Time: {:.1f}'.format(meta_val_acc, meta_val_std, test_time))
 
         #evaluate
         start = time.time()
         meta_test_acc, meta_test_std = 0,0 #meta_test(model, meta_testloader)
         test_time = time.time() - start
-        print('Meta Test Acc: {:.4f}, Meta Test std: {:.4f}, Time: {:.1f}'.format(meta_test_acc, meta_test_std, test_time))
+        logger.info('Meta Test Acc: {:.4f}, Meta Test std: {:.4f}, Time: {:.1f}'.format(meta_test_acc, meta_test_std, test_time))
         
         # regular saving
         if epoch % args.save_freq == 0 or epoch==args.epochs:
-            print('==> Saving...')
+            logger.info('==> Saving...')
             state = {
                 'epoch': epoch,
                 'optimizer': optimizer.state_dict(),
@@ -418,19 +419,56 @@ def main():
                    'Meta Val std': meta_val_std
                   })#'''
 
-    #final report 
-    #print("GENERATING FINAL REPORT")
+
+
+    #-------final report ------------
+    logger.info("GENERATING FINAL REPORT")
+    model.is_training=False
     #generate_final_report(model, opt, wandb)
+    from eval.meta_eval import meta_test
+    
+    args.n_shots = 1
+    train_loader, val_loader, meta_testloader, meta_valloader, _, _ = get_dataloaders(args)
+    
+    #validate
+    meta_val_acc, meta_val_std = meta_test(model, meta_valloader)
+    meta_val_acc_feat, meta_val_std_feat = meta_test(model, meta_valloader, use_logit=False)
+
+    #evaluate
+    meta_test_acc, meta_test_std = meta_test(model, meta_testloader)
+    meta_test_acc_feat, meta_test_std_feat = meta_test(model, meta_testloader, use_logit=False)
+        
+    logger.info('Meta Val Acc : {:.4f}, Meta Val std: {:.4f}'.format(meta_val_acc, meta_val_std))
+    logger.info('Meta Val Acc (feat): {:.4f}, Meta Val std (feat): {:.4f}'.format(meta_val_acc_feat, meta_val_std_feat))
+    logger.info('Meta Test Acc: {:.4f}, Meta Test std: {:.4f}'.format(meta_test_acc, meta_test_std))
+    logger.info('Meta Test Acc (feat): {:.4f}, Meta Test std (feat): {:.4f}'.format(meta_test_acc_feat, meta_test_std_feat))
+
+    args.n_shots = 5
+    train_loader, val_loader, meta_testloader, meta_valloader, _, _ = get_dataloaders(args)
+    
+    #validate
+    meta_val_acc, meta_val_std = meta_test(model, meta_valloader)
+    meta_val_acc_feat, meta_val_std_feat = meta_test(model, meta_valloader, use_logit=False)
+
+    #evaluate
+    meta_test_acc, meta_test_std = meta_test(model, meta_testloader)
+    meta_test_acc_feat, meta_test_std_feat = meta_test(model, meta_testloader, use_logit=False)
+        
+    logger.info('Meta Val Acc : {:.4f}, Meta Val std: {:.4f}'.format(meta_val_acc, meta_val_std))
+    logger.info('Meta Val Acc (feat): {:.4f}, Meta Val std (feat): {:.4f}'.format(meta_val_acc_feat, meta_val_std_feat))
+    logger.info('Meta Test Acc: {:.4f}, Meta Test std: {:.4f}'.format(meta_test_acc, meta_test_std))
+    logger.info('Meta Test Acc (feat): {:.4f}, Meta Test std (feat): {:.4f}'.format(meta_test_acc_feat, meta_test_std_feat))
+
     
     #remove output.txt log file 
-    output_log_file = os.path.join(args.job_dir, "output.log")
+    '''output_log_file = os.path.join(args.job_dir, "output.log")
     if os.path.isfile(output_log_file):
         os.remove(output_log_file)
     else:    ## Show an error ##
-        print("Error: %s file not found" % output_log_file)
+        print("Error: %s file not found" % output_log_file)#'''
         
       
-def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBank):
+def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBank, logger):
     """One epoch training"""
     model.train()
 
@@ -452,12 +490,13 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
     end = time.time()
     with tqdm(train_loader, total=len(train_loader)) as pbar:
         #for _, (input, input2, input3, input4, target, indices) in enumerate(pbar):
-        for _, ((image_s,image_s2,image_s3,image_s4, target_s, indices_s), (image_t, _, indices_t)) in enumerate(pbar):
+        for _, ((image_s,image_s2,image_s3,image_s4, target_s, indices_s), (image_t,image_t2,image_t3,image_t4, _, indices_t)) in enumerate(pbar):
             data_time.update(time.time() - end)
 
             if torch.cuda.is_available():
                 image_t, indices_t= image_t.cuda(), indices_t.cuda()
                 image_s,image_s2,image_s3,image_s4,target_s,indices_s=image_s.cuda(),image_s2.cuda(),image_s3.cuda(),image_s4.cuda(),target_s.cuda(),indices_s.cuda(),
+                image_t,image_t2,image_t3,image_t4=image_t.cuda(),image_t2.cuda(),image_t3.cuda(),image_t4.cuda()
                 #input = input.cuda()
                 #input2 = input2.cuda()
                 #input3 = input3.cuda()
@@ -466,25 +505,28 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
                 #indices = indices.cuda()
             batch_size = image_s.shape[0]
 
-            if args.multi_crop:
-                generated_data = rotrate_concat([image_s,image_s2,image_s3,image_s4], angle_list=angle_list)
+            if args.single_crop:
+                generated_data_s = rotrate_concat([image_s], angle_list=angle_list)
             else:
-                generated_data = rotrate_concat([image_s], angle_list=angle_list)
-            train_targets = target_s.repeat(args.trans)
-            proxy_labels = torch.zeros(args.trans*batch_size).cuda().long()
+                generated_data_s = rotrate_concat([image_s,image_s2,image_s3,image_s4], angle_list=angle_list)
+            
+            generated_data_t = rotrate_concat([image_t,image_t2,image_t3,image_t4], angle_list=angle_list)
+                
+            train_targets = target_s.repeat(args.trans_s)
+            proxy_labels = torch.zeros(args.trans_t*batch_size).cuda().long()
 
-            for ii in range(args.trans):
+            for ii in range(args.trans_t):
                 proxy_labels[ii*batch_size:(ii+1)*batch_size] = ii
 
             # ===================forward=====================
             #_, (train_logit, eq_logit, inv_rep) = model(input, inductive=True)
-            (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(generated_data, image_t, inductive=True)
+            (pred_s, pred_t), (conv_feat_s, conv_feat_t), (eq_logit_s, eq_logit_t), (inv_logit_s, inv_logit_t), (pred_domain_s, pred_domain_t) = model(generated_data_s, generated_data_t, inductive=True, trans_t=args.trans_t)
             
-            loss_domain = args.lambda_domain * (criterion(pred_domain_s, torch.LongTensor(batch_size*args.trans).fill_(0).cuda()) + criterion(pred_domain_t, torch.LongTensor(batch_size).fill_(1).cuda()))
+            loss_domain = args.lambda_domain * (criterion(pred_domain_s, torch.LongTensor(batch_size*args.trans_s).fill_(0).cuda()) + criterion(pred_domain_t, torch.LongTensor(batch_size*args.trans_t).fill_(1).cuda()))
 
             # ===================memory bank of negatives for current batch=====================
             np.random.shuffle(train_indices)
-            mn_indices_all = np.array(list(set(train_indices) - set(indices_s)))
+            mn_indices_all = np.array(list(set(train_indices) - set(indices_t)))
             np.random.shuffle(mn_indices_all)
             mn_indices = mn_indices_all[:args.membank_size]
             mn_arr = MemBank[mn_indices]
@@ -492,13 +534,13 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
 
             loss_ce = criterion(pred_s, train_targets)
             loss_h = args.lambda_h * h_loss(pred_t)
-            loss_eq =  args.lambda_eq * criterion(eq_logit_s, proxy_labels)
+            loss_eq =  args.lambda_eq * criterion(eq_logit_t, proxy_labels)
 
-            inv_rep_0 = inv_logit_s[:batch_size, :]
+            inv_rep_0 = inv_logit_t[:batch_size, :]
             loss_inv = simple_contrstive_loss(mem_rep_of_batch_imgs, inv_rep_0, mn_arr, args.contrast_temp)
-            for ii in range(1, args.trans):
-                loss_inv += simple_contrstive_loss(inv_rep_0, inv_logit_s[(ii*batch_size):((ii+1)*batch_size), :], mn_arr, args.contrast_temp)
-            loss_inv = args.lambda_inv * loss_inv/args.trans#'''
+            for ii in range(1, args.trans_t):
+                loss_inv += simple_contrstive_loss(inv_rep_0, inv_logit_t[(ii*batch_size):((ii+1)*batch_size), :], mn_arr, args.contrast_temp)
+            loss_inv = args.lambda_inv * loss_inv/args.trans_t#'''
 
             #loss = args.gamma * (loss_eq + loss_inv) + loss_ce
             loss = loss_ce + loss_eq + loss_inv + loss_h + loss_domain 
@@ -539,7 +581,7 @@ def train(epoch, train_loader, model, criterion, h_loss, optimizer, args, MemBan
                               "Loss_Inv" :'{0:.2f}'.format(losses_inv.avg,2),
                              })
 
-    print('Train_Acc@1 {top1.avg:.3f} Train_Acc@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
+    logger.info('Train_Acc@1 {top1.avg:.3f} Train_Acc@5 {top5.avg:.3f}'.format(top1=top1, top5=top5))
 
     return top1.avg, losses.avg, MemBank
 
